@@ -1,0 +1,311 @@
+import os
+from PIL import Image
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+import time
+
+import zarr
+import glob
+import json
+#from utils.utils_analysis_iscat import *
+
+from functools import partial
+from matplotlib_scalebar.scalebar import ScaleBar
+from matplotlib.animation import FuncAnimation
+
+import zarr # to store the images
+import xarray as xr # to load the zarr data
+
+# %%
+#Loading the common path and separating the pl data from the iSCAT data
+common_path = r"E:\Mauk\iSCAT\Operando_PEA_formation\260519_spincoat_2x\spincoat2x.1"
+files_pl = glob.glob(os.path.join(common_path, "*pl*"))
+files_scat = glob.glob(os.path.join(common_path, "*scat*"))
+files_meta = glob.glob(os.path.join(common_path, "*json*"))
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+scat_zarr = zarr.open(files_scat[select], mode='r')
+pl_zarr = zarr.open(files_pl[select], mode='r')
+import xarray as xr
+iscat_arr = xr.Dataset({'data': xr.DataArray(scat_zarr, dims=['time', 'x', 'y'])})
+pl_arr = xr.Dataset({'data': xr.DataArray(pl_zarr, dims=['time', 'x', 'y'])})
+
+#pl_arr =xr.open_zarr(files_pl[select], consolidated = True ) 
+#iscat_arr = xr.open_zarr(files_scat[select], consolidated= True)
+
+# If you prefer working with a DataArray
+iscat_data = iscat_arr['data']  # Extract the data array
+
+# %% ------------------------------------------
+# First, understand the structure of your data
+print("iSCAT dataset structure:")
+print(iscat_arr)
+print("\nVariables:", list(iscat_arr.variables))
+print("Dimensions:", iscat_arr.dims)
+print("Data shape:", iscat_arr['data'].shape)
+
+# Second, the pl dataset
+print("\nPL dataset structure:")
+print(pl_arr)
+print("\nVariables:", list(pl_arr.variables))
+print("Dimensions:", pl_arr.dims)
+print("Data shape:", pl_arr['data'].shape)
+# ---------------------------------------------
+
+# %% ONLY iSCAT DATA LOOKOUT
+
+# 1. Set the path (Update this to your local /Volumes/ mount)
+zarr_path = r
+              
+#/Volumes/pshare/Lab/Mauk/260311/260311_SC_1773246255.zarr
+
+# 2. Open the array (this doesn't load the data yet, just the metadata)
+data_stack = xr.open_zarr(zarr_path,)
+
+# Check the shape: Expecting (Frames, Height, Width)
+print(f"Array shape: {data_stack['data'].shape}")
+
+image_arr = data_stack['data']  # Access the 'images' array within the zarr group
+time_arr = data_stack['time']  # Access the 'time' array within the zarr group
+
+
+
+
+# %%
+%matplotlib inline
+# plottinf the first and last frame of the iSCAT and pl data to check if it loads correctly
+plt.figure(figsize=(12, 6))
+plt.subplot(2, 2, 1)
+plt.imshow(iscat_arr['data'][0], cmap='gray')
+plt.title('iSCAT - First Frame')
+plt.axis('off')
+plt.subplot(2, 2, 2)
+plt.imshow(iscat_arr['data'][-1], cmap='gray')
+plt.title('iSCAT - Last Frame')
+plt.axis('off')
+plt.subplot(2, 2, 3)
+plt.imshow(pl_arr['data'][0], cmap='gray')
+plt.title('PL - First Frame')
+plt.axis('off')
+plt.subplot(2, 2, 4)
+plt.imshow(pl_arr['data'][-1], cmap='gray')
+plt.title('PL - Last Frame')
+plt.axis('off')
+plt.show()
+
+# %%
+# plotting intensity over time for 4 quadrant over all the frames
+intensity = iscat_arr['data'].mean(dim=['y', 'x']).compute()  # Compute mean intensity over y and x dimensions
+# 1. Get the actual time array from your xarray object
+# This ensures 'times' has exactly the same length as your images (...)
+images = iscat_data  # This is your 3D array with dimensions (time, y, x)
+actual_times = iscat_arr['time'].values 
+
+# 2. Get height and width dynamically
+h, w = images.shape[1], images.shape[2]
+
+# 3. Calculate Quadrants (This creates 1 value per frame for the whole file)
+q1 = images[:, :h//2, :w//2].mean(dim=['y', 'x']).compute()
+q2 = images[:, :h//2, w//2:].mean(dim=['y', 'x']).compute()
+q3 = images[:, h//2:, :w//2].mean(dim=['y', 'x']).compute() 
+q4 = images[:, h//2:, w//2:].mean(dim=['y', 'x']).compute()
+
+# 2. Check if the shapes match before plotting (Good for debugging)
+print(f"Time points: {len(actual_times)}")
+print(f"Data points: {len(q1)}")
+
+# 3. Plotting
+plt.figure(figsize=(10, 5))
+
+# 2. Plot each quadrant with defined colors
+plt.plot(actual_times, q1, label='Top-Left (Q1)', color='blue')
+plt.plot(actual_times, q2, label='Top-Right (Q2)', color='gray')
+plt.plot(actual_times, q3, label='Bottom-Left (Q3)', color='red') 
+plt.plot(actual_times, q4, label='Bottom-Right (Q4)', color='green')
+
+plt.xlabel("Time [s]")
+plt.ylabel("Mean Intensity")
+#plt.title("Intensity vs Time (All Quadrants)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+
+
+# %%
+images = iscat_data  # This is your 3D array with dimensions (time, y, x)
+times = iscat_arr['time'].values  # This is your time array
+from scipy.ndimage import gaussian_filter1d
+
+# ============================================================
+# PARAMETERS
+# ============================================================
+block_size = 5
+smooth_sigma = 3
+epsilon = 0.03
+min_consecutive = 20
+
+# ============================================================
+# COARSE GRAINING
+# ============================================================
+coarse = images.coarsen(
+    x=block_size,
+    y=block_size,
+    boundary='trim'
+).mean()
+coarse_data = coarse.values
+n_time, ny, nx = coarse_data.shape
+
+# ============================================================
+# STORAGE
+# ============================================================
+crystal_mask = np.zeros((ny, nx), dtype=bool)
+
+crystallisation_time = np.full((ny, nx), np.nan)
+
+trace_array = np.zeros((ny, nx, n_time))
+
+# ============================================================
+# MAIN LOOP
+# ============================================================
+
+for iy in range(ny):
+
+    for ix in range(nx):
+
+        trace = coarse_data[:, iy, ix].astype(float)
+
+        # ----------------------------------------
+        # Normalize
+        # ----------------------------------------
+
+        trace = (
+            trace - trace[0]
+        ) / np.abs(trace[0])
+
+        # ----------------------------------------
+        # Smooth
+        # ----------------------------------------
+
+        trace_smooth = gaussian_filter1d(
+            trace,
+            sigma=smooth_sigma
+        )
+
+        trace_array[iy, ix] = trace_smooth
+
+        # ----------------------------------------
+        # Final plateau intensity
+        # ----------------------------------------
+
+        I_final = np.median(trace_smooth[-30:])
+        I_initial = np.mean(trace_smooth[:10])
+        net_change = abs(I_final - I_initial)
+
+        if net_change < 0.03:
+            continue
+
+        # ----------------------------------------
+        # Distance to final plateau
+        # ----------------------------------------
+
+        distance = np.abs(
+            trace_smooth - I_final
+        )
+
+        # ----------------------------------------
+        # Find first sustained entrance
+        # ----------------------------------------
+
+        inside = distance < epsilon
+
+        count = 0
+
+        for t in range(n_time):
+
+            if inside[t]:
+                count += 1
+            else:
+                count = 0
+
+            if count >= min_consecutive:
+
+                crystal_mask[iy, ix] = True
+
+                crystallisation_frame = (
+                    t - min_consecutive + 1
+                )
+
+                crystallisation_time[iy, ix] = (
+                    times[crystallisation_frame]
+                )
+
+                break
+
+
+# ============================================================
+# VISUALIZE CRYSTALLISATION TIME MAP
+# ============================================================
+
+plt.figure(figsize=(8,8))
+
+im = plt.imshow(
+    crystallisation_time,
+    cmap='gray',      # grayscale map
+    origin='lower'
+)
+
+plt.title("Crystallisation Time Map")
+
+cbar = plt.colorbar(im)
+cbar.set_label("Crystallisation Time [s]")
+
+plt.show()
+
+# ============================================================
+# AREA GROWTH
+# ============================================================
+
+area_growth = []
+
+for t in range(n_time):
+
+    area = np.sum(
+        crystallisation_time <= times[t]
+    )
+
+    # convert block count -> pixels²
+    area *= block_size**2
+
+    area_growth.append(area)
+
+area_growth = np.array(area_growth)
+
+# ============================================================
+# PLOT AREA GROWTH
+# ============================================================
+%matplotlib inline
+plt.figure(figsize=(10,5))
+plt.plot(times, area_growth, linewidth=2)
+plt.xlabel("Time [s]")
+plt.ylabel("Crystal Area [pixels²]")
+plt.title("Perovskite Crystal Growth")
+plt.grid(alpha=0.3)
+plt.show()
+
+
+# %%
+# 3. Plot a few frames
+
+fig, ax = plt.subplots( 1,5, figsize=(15,3))
+for i in range(5):
+    frame_idx = len(iscat_arr['data']) // 5 * i  # Get indices for 5 evenly spaced frames
+    ax[i].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+    ax[i].set_title(f"Frame {frame_idx}")
+    ax[i].axis('off')
+
+# %%
