@@ -1,0 +1,827 @@
+# %%
+import os
+from PIL import Image
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+import time
+
+from functools import partial
+from matplotlib_scalebar.scalebar import ScaleBar
+from matplotlib.animation import FuncAnimation
+
+import zarr # to store the images
+import xarray as xr # to load the zarr data
+
+from scipy.ndimage import gaussian_filter1d
+# %%
+
+# 1. Set the path (Update this to your local /Volumes/ mount)
+zarr_path = r"C:\Users\phondCutie\Desktop\iSCAT (Mauk)\260311_SC_1773763108.zarr"
+#/Volumes/pshare/Lab/Mauk/260311/260311_SC_1773246255.zarr
+
+# 2. Open the array (this doesn't load the data yet, just the metadata)
+data_stack = xr.open_zarr(zarr_path,)
+
+# Check the shape: Expecting (Frames, Height, Width)
+print(f"Array shape: {data_stack['images'].shape}")
+
+image_arr = data_stack['images']  # Access the 'images' array within the zarr group
+time_arr = data_stack['time']  # Access the 'time' array within the zarr group
+
+
+
+# %%
+mean_image = xarr_dat['images'].mean(dim=['y', 'x']).compute()  # Compute mean intensity over y and x dimensions
+
+
+# Choose the row you want to inspect
+row = 330   # change this value
+
+# Plot the image with a line
+plt.imshow(mean_image, cmap='magma')
+plt.axhline(row, color='cyan', linestyle='--', label=f'Row {row}')
+plt.colorbar(label='Average Intensity')
+plt.title("Mean Calibration Image")
+plt.legend()
+plt.show()
+
+# Extract intensity values along that row
+profile = mean_image[row, 130:600]
+
+# Plot the intensity profile
+plt.figure()
+plt.plot(profile)
+plt.xlabel("Pixel (x)")
+plt.ylabel("Intensity")
+plt.title(f"Intensity Profile Along Row {row}")
+plt.show()
+
+#%% 
+# me
+
+
+# %%
+
+from scipy.signal import find_peaks
+cropped_row = mean_image[row, 130:600]
+peaks, _ = find_peaks(cropped_row, height=1000) # adjust the height threshold as needed
+print(peaks)
+
+# average distance between peaks
+distances = np.diff(peaks).mean()
+print('Average distance between peaks:', distances)
+
+# WHAT is our magnification???
+
+px_size = 9 # um
+real_distance = 0.01 # mm
+magnification = (distances*px_size) / (real_distance*1000) # convert real_distance to um
+print('Magnification:', magnification)
+
+
+
+# %%
+# 3. Plot a few frames
+
+fig, ax = plt.subplots( 1,5, figsize=(15,3))
+for i in range(5):
+    frame_idx = len(image_arr) // 5 * i  # Get indices for 5 evenly spaced frames
+    ax[i].imshow(image_arr[frame_idx], cmap='magma')
+    ax[i].set_title(f"Frame {frame_idx}")
+    ax[i].axis('off')
+plt.savefig("frames_sco1.pdf", bbox_inches='tight')
+
+
+#%%
+
+# %%
+# 3. Plot a few frames with scalebar on the first frame. 
+# Every pixel is 9 microns, so the scalebar should be 10 pixels for 90 microns.
+# The scalebar should be white on the top left corner of the image and should be visible on the first frame. 
+import xarray as xr
+xarr_dat = xr.open_zarr(zarr_path)
+xarr_dat['images']  # This will show the DataArray for images, but won't load the data yet
+
+from matplotlib_scalebar.scalebar import ScaleBar
+
+# Setup the 1x5 subplot grid
+fig, ax = plt.subplots(1, 5, figsize=(15, 3),)
+
+
+
+objective = 10 
+mag = 5 # Extra Magnification 
+total_mag = objective * mag
+print(total_mag)
+# 1 pixel = 0.6 microns = 0.6e-6 meters (or 0.6 micrometers)
+# The dx argument takes the size of one pixel in the chosen units.
+scalebar = ScaleBar(
+    dx= 9/ total_mag, 
+    length_fraction = 0.4,
+    box_color="white",
+    box_alpha=0.8,
+    units="um", 
+    fixed_value=10,          # Forces the scalebar to be exactly 90 microns (10 pixels)
+    location="upper left",   # Places it in the top left corner
+    color="black",           # Color of the bar itself
+    frameon=True            # Removes the bounding box background so it sits cleanly on the image
+)
+# get the time instead of frames and plot evenly spaced time points instead of frames
+for i in range(5):
+    frame_idx = len(xarr_dat['images']) // 5 * i  # Get indices for 5 evenly spaced frames
+    
+    # Plot the image on the specific subplot axis
+    ax[i].imshow(xarr_dat['images'][frame_idx], cmap='magma')
+    ax[i].set_title(f"Time {frame_idx} s")
+    ax[i].axis('off')
+   
+    
+    # Add the scalebar ONLY to the first frame (index 0)
+    if i == 0:
+        ax[i].add_artist(scalebar)
+
+plt.tight_layout()
+
+plt.savefig("frames_SCO.pdf", bbox_inches='tight')
+plt.show()
+
+
+
+
+
+
+# %%
+#load data using xarray
+import xarray as xr
+xarr_dat = xr.open_zarr(zarr_path)
+# %%
+xarr_dat['images']  # This will show the DataArray for images, but won't load the data yet
+
+# %%
+intensity = xarr_dat['images'].mean(dim=['y', 'x']).compute()  # Compute mean intensity over y and x dimensions
+# %%   #1!
+# plotting intensity over time for 4 quadrant over all the frames
+
+# 1. Get the actual time array from your xarray object
+# This ensures 'times' has exactly the same length as your images (...)
+images = xarr_dat['images']
+actual_times = data_stack['time'].values 
+
+# 2. Get height and width dynamically
+h, w = images.shape[1], images.shape[2]
+
+# 3. Calculate Quadrants (This creates 1 value per frame for the whole file)
+q1 = images[:, :h//2, :w//2].mean(dim=['y', 'x']).compute()
+q2 = images[:, :h//2, w//2:].mean(dim=['y', 'x']).compute()
+q3 = images[:, h//2:, :w//2].mean(dim=['y', 'x']).compute() 
+q4 = images[:, h//2:, w//2:].mean(dim=['y', 'x']).compute()
+
+# 2. Check if the shapes match before plotting (Good for debugging)
+print(f"Time points: {len(actual_times)}")
+print(f"Data points: {len(q1)}")
+
+# 3. Plotting
+plt.figure(figsize=(10, 5))
+
+# 2. Plot each quadrant with defined colors
+plt.plot(actual_times, q1, label='Top-Left (Q1)', color='blue')
+plt.plot(actual_times, q2, label='Top-Right (Q2)', color='gray')
+plt.plot(actual_times, q3, label='Bottom-Left (Q3)', color='red') 
+plt.plot(actual_times, q4, label='Bottom-Right (Q4)', color='green')
+
+plt.xlabel("Time $T$ [s]", fontsize=15)
+plt.ylabel("Mean Intensity $I$ [a.u.]", fontsize=15)
+#plt.title("Intensity vs Time (All Quadrants)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.savefig("quadrants_sco1.pdf", bbox_inches='tight')
+plt.show()
+
+
+
+
+
+# %% [Coarse-Grained Local Dynamics] ---------------------------------------
+
+images = xarr_dat['images']
+
+# Coarse grain factor (adjust!)
+block_size = 30   # 300 → 6x6 grid
+
+# Downsample by averaging blocks (VERY efficient), it is a xarray method
+coarse = images.coarsen(y=block_size, x=block_size, boundary='trim').mean()
+
+# Now shape is ~ (time, 15, 15)
+
+# Stack spatial dims → (time, region)
+coarse_reshaped = coarse.stack(region=('y','x'))
+
+# --- Extract region coordinates BEFORE compute ---
+region_coords = coarse_reshaped['region'].values  # MultiIndex (y, x)
+
+# Compute once
+coarse_reshaped = coarse_reshaped.compute()
+data = coarse_reshaped.values  # (time, region)
+
+data_smooth = gaussian_filter1d(data, sigma=3, axis=0)
+
+dt = np.gradient(coarse_reshaped['time'].values)
+dIdt = np.gradient(data_smooth, axis=0) / dt[:, None]
+
+dIdt_smooth = gaussian_filter1d(dIdt, sigma=1, axis=0)
+
+plt.figure(figsize=(10,6))
+
+for i in range(5, 30, 5):
+    y, x = region_coords[i]
+    plt.plot(
+        coarse_reshaped['time'],
+        data_smooth[:, i],
+        label=f"Region {i} (y={y}, x={x})",
+        alpha=0.8
+    )
+
+
+plt.xlabel("Time $T$ [s]", fontsize=15)
+plt.ylabel("dI_smooth", fontsize=15)
+plt.title("Local Intensity")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+
+for i in range(5, 30, 5):
+    y, x = region_coords[i]
+    plt.plot(
+        coarse_reshaped['time'],
+        dIdt_smooth[:, i],
+        label=f"Region {i} (y={y}, x={x})",
+        alpha=0.8
+    )
+
+plt.xlabel("Time $T$ [s]", fontsize=15)
+plt.ylabel("dI/dt (normalized)", fontsize=15)
+plt.title("Local Intensity Change Rate")
+plt.legend()
+plt.grid(alpha=0.3)
+plt.show()
+
+
+
+# %% [Smoothed & Normalized Local Dynamics]
+# checking local regions to see if the intensity change differs per region. 
+# Smoothed and normalization is done to make it easier to compare regions and see the transition more clearly!!
+
+from scipy.ndimage import gaussian_filter1d
+images = xarr_dat['images']
+
+# Coarse grain
+block_size = 10 #change to grap smaller or bigger regions!
+coarse = images.coarsen(y=block_size, x=block_size, boundary='trim').mean()
+
+# Stack spatial dims → (time, regions)
+coarse_reshaped = coarse.stack(region=('y','x')).compute()
+
+# Convert to numpy array for fast processing
+data = coarse_reshaped.values   # shape: (time, n_regions)
+
+# --- 1. Gaussian smoothing ---
+sigma = 3  # adjust (higher = smoother)
+data_smooth = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+# --- 2. Normalize (subtract first value of each region) ---
+baseline = np.mean(data_smooth[0:25, :], axis=0)  # mean of first 10 time points as baseline
+data_norm = data_smooth - baseline
+
+# --- Plot ---
+plt.figure(figsize=(10,6))
+
+for i in range(10,51,10):  # plot subset
+    plt.plot(coarse_reshaped['time'], data_norm[:, i], alpha=0.7)
+
+plt.xlabel("Time $T$ [s]", fontsize=13)
+plt.ylabel("Δ Intensity $I$ [a.u.]", fontsize=13)
+#plt.xlim(75, 110)
+#plt.ylim(2000, 5000)
+#plt.title("Smoothed & Normalized Local Dynamics")
+plt.legend([f"Region {i}" for i in range(4)], loc='lower right')
+plt.grid(alpha=0.3)
+plt.savefig("smooth_norm.pdf")
+plt.show()
+
+
+#%%
+'''
+fig,ax = plt.subplots(1,2, figsize=(12,5))
+ax[0].imshow(coarse.isel(time=0), cmap='magma')
+#add the points where i measure intensity
+for i in range(10,51,10):
+    y, x = coarse_reshaped['region'][i].values
+    ax[0].plot(x, y, 'x', color='cyan')
+ax[1].plot(coarse_reshaped['time'], data_norm[:, 10], label='Region 10')
+'''
+
+
+# %%
+
+
+# ----------------
+images = xarr_dat['images']
+# Coarse grain
+block_size = 10
+coarse = images.coarsen(y=block_size, x=block_size, boundary='trim').mean()
+# Stack spatial dims → (time, regions)
+coarse_reshaped = coarse.stack(region=('y','x')).compute()
+# Convert to numpy array for fast processing
+data = coarse_reshaped.values   # shape: (time, n_regions)
+# ----------------
+
+
+
+# --- PARAMETERS ---
+y0 = 150   # horizontal line (row)
+x0 = 150   # vertical line (column)
+n_points = 5  # how many points per line
+
+# --- DEFINE INDICES ---
+x_vals = np.linspace(0, images.shape[2]-1, n_points).astype(int)
+y_vals = np.linspace(0, images.shape[1]-1, n_points).astype(int)
+
+# Horizontal: y fixed, x varies
+horizontal_coords = [(y0, x) for x in x_vals]
+# Vertical: x fixed, y varies
+vertical_coords = [(y, x0) for y in y_vals]
+# Diagonal: y = x (scaled)
+diag_coords = list(zip(y_vals, x_vals))
+
+
+# --- FUNCTION ---
+def extract_and_process(coords, sigma=3):
+    data = np.array([images[:, y, x] for (y, x) in coords]).T
+
+    smooth = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+    baseline = np.mean(smooth[5:15, :], axis=0)
+    norm = smooth - baseline
+    return norm
+
+data_h = extract_and_process(horizontal_coords)
+data_v = extract_and_process(vertical_coords)
+data_d = extract_and_process(diag_coords)
+
+time = images['time']
+
+# --- PLOT ---
+fig, ax = plt.subplots(1, 4, figsize=(18,5))
+
+# ================= LEFT IMAGE =================
+img0 = images.isel(time=0)
+ax[0].imshow(img0, cmap='magma')
+
+hy, hx = zip(*horizontal_coords)
+vy, vx = zip(*vertical_coords)
+dy, dx = zip(*diag_coords)
+
+ax[0].scatter(hx, hy, color='cyan', s=10)
+ax[0].scatter(vx, vy, color='magenta', s=10)
+ax[0].scatter(dx, dy, color='yellow', s=10)
+
+ax[0].set_title("Selected Regions")
+
+# ================= RIGHT PLOTS =================
+for i in range(data_h.shape[1]):
+    ax[1].plot(time, data_h[:, i], color='cyan', alpha=0.4)
+ax[1].set_title("Horizontal")
+
+for i in range(data_v.shape[1]):
+    ax[2].plot(time, data_v[:, i], color='magenta', alpha=0.4)
+ax[2].set_title("Vertical")
+
+for i in range(data_d.shape[1]):
+    ax[3].plot(time, data_d[:, i], color='yellow', alpha=0.4)
+ax[3].set_title("Diagonal")
+
+for i in range(1,4):
+    ax[i].set_xlabel("Time")
+    ax[i].grid(alpha=0.3)
+
+ax[1].set_ylabel("Δ Intensity")
+
+plt.tight_layout()
+plt.show()
+
+
+
+
+# %% SLOPE VS FRONT DETECTION
+# great
+images = xarr_dat['images']
+time = images['time'].values
+
+# --- PARAMETERS ---
+y0 = 250
+x0 = 250
+n_points = 50
+
+# Transition window
+t_min, t_max = 60, 125
+
+# --- COORDINATES ---
+x_vals = np.linspace(0, images.shape[2]-1, n_points).astype(int)
+y_vals = np.linspace(0, images.shape[1]-1, n_points).astype(int)
+
+horizontal_coords = [(y0, x) for x in x_vals]
+vertical_coords   = [(y, x0) for y in y_vals]
+diag_coords       = list(zip(y_vals, x_vals))
+
+
+# --- FUNCTION: slope via linear fit ---
+def get_slope_profile(coords, sigma=3):
+    data = np.array([images[:, y, x] for (y, x) in coords]).T
+
+    # Smooth
+    data = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+    # Normalize
+    baseline = np.mean(data[10:20, :], axis=0)
+    data = data - baseline
+
+    # Select transition window
+    mask = (time >= t_min) & (time <= t_max)
+    t_fit = time[mask]
+
+    slopes = []
+
+    for i in range(data.shape[1]):
+        y_fit = data[mask, i]
+
+        # Linear fit: y = a*t + b
+        a, b = np.polyfit(t_fit, y_fit, 1)
+        slopes.append(a)
+
+    return np.array(slopes)
+
+
+# --- COMPUTE ---
+slope_h = get_slope_profile(horizontal_coords)
+slope_v = get_slope_profile(vertical_coords)
+slope_d = get_slope_profile(diag_coords)
+
+# --- CONSISTENT POSITION AXIS ---
+# 1. Define the pixel-to-um conversion factor
+pixel_to_um = 9 / 50
+
+# 2. Convert original pixel values to micrometers
+pos_h = x_vals * pixel_to_um
+pos_v = y_vals * pixel_to_um
+pos_d = np.sqrt(x_vals**2 + y_vals**2) * pixel_to_um  # diagonal distance
+
+# Normalize positions (optional but recommended)
+pos_h = pos_h - pos_h.min()
+pos_v = pos_v - pos_v.min()
+pos_d = pos_d - pos_d.min()
+
+
+# --- PLOT ---
+fig, ax = plt.subplots(1, 2, figsize=(14,5))
+
+# LEFT IMAGE
+img0 = images.isel(time=0)
+ax[0].imshow(img0, cmap='magma')
+
+hy, hx = zip(*horizontal_coords)
+vy, vx = zip(*vertical_coords)
+dy, dx = zip(*diag_coords)
+
+ax[0].scatter(hx, hy, color='lightgray', s=10)
+ax[0].scatter(vx, vy, color='gray', s=10)
+ax[0].scatter(dx, dy, color='black', s=10)
+
+ax[0].set_title("Selected Regions", fontsize=13)
+
+# RIGHT: CLEAN SLOPE PLOT
+ax[1].plot(pos_h, slope_h, '-o', color='lightgray', label='Horizontal')
+ax[1].plot(pos_v, slope_v, '-o', color='gray', label='Vertical')
+ax[1].plot(pos_d, slope_d, '-o', color='black', label='Diagonal')
+
+ax[1].set_xlabel("Distance along line [$/u$m]", fontsize=13)
+ax[1].set_ylabel("Mean Slope $dI/dt$ [a.u./s]", fontsize=13)
+#ax[1].set_xlim()
+#ax[1].set_title("Growth Rate During Transition (60–125)")
+ax[1].legend()
+ax[1].grid(alpha=0.3)
+plt.savefig("slope_sco1.pdf", bbox_inches='tight')
+plt.tight_layout()
+plt.show()
+
+
+
+# %% T1/2 FRONT DETECTION
+
+images = xarr_dat['images']
+time = images['time'].values
+
+# --- PARAMETERS ---
+y0 = 250
+x0 = 250
+n_points = 50
+
+x_vals = np.linspace(0, images.shape[2]-1, n_points).astype(int)
+y_vals = np.linspace(0, images.shape[1]-1, n_points).astype(int)
+
+horizontal_coords = [(y0, x) for x in x_vals]
+vertical_coords   = [(y, x0) for y in y_vals]
+diag_coords       = list(zip(y_vals, x_vals))
+
+
+# --- FUNCTION: find transition time ---
+def get_transition_times(coords, sigma=2):
+    data = np.array([images[:, y, x] for (y, x) in coords]).T
+
+    # Smooth
+    data = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+    # Normalize
+    baseline = np.mean(data[10:20, :], axis=0)
+    data = data - baseline
+
+    t_trans = []
+
+    for i in range(data.shape[1]):
+        y = data[:, i]
+
+        # Define 50% level
+        y_min = np.min(y)
+        y_max = np.max(y)
+        y_half = y_min + 0.5 * (y_max - y_min)
+
+        # Find closest point
+        idx = np.argmin(np.abs(y - y_half))
+        t_trans.append(time[idx])
+
+    return np.array(t_trans)
+
+
+# --- COMPUTE ---
+t_h = get_transition_times(horizontal_coords)
+t_v = get_transition_times(vertical_coords)
+t_d = get_transition_times(diag_coords)
+
+# --- POSITION AXIS ---
+pos_h = x_vals - x_vals.min()
+pos_v = y_vals - y_vals.min()
+pos_d = np.sqrt(x_vals**2 + y_vals**2)
+pos_d = pos_d - pos_d.min()
+
+
+# --- PLOT ---
+fig, ax = plt.subplots(1, 2, figsize=(14,5))
+
+# LEFT IMAGE
+img0 = images.isel(time=0)
+ax[0].imshow(img0, cmap='magma')
+
+hy, hx = zip(*horizontal_coords)
+vy, vx = zip(*vertical_coords)
+dy, dx = zip(*diag_coords)
+
+ax[0].scatter(hx, hy, color='lightgray', s=10)
+ax[0].scatter(vx, vy, color='gray', s=10)
+ax[0].scatter(dx, dy, color='black', s=10)
+
+ax[0].set_title("Selected Regions", fontsize=13)
+
+# RIGHT: FRONT DETECTION
+ax[1].plot(pos_h, t_h, '-o', color='lightgray', label='Horizontal')
+ax[1].plot(pos_v, t_v, '-o', color='gray', label='Vertical')
+ax[1].plot(pos_d, t_d, '-o', color='black', label='Diagonal')
+
+ax[1].set_xlabel("Distance along line (pixels)", fontsize=13)
+ax[1].set_ylabel("Transition Time $T_1/_2 $ [s]", fontsize=13)
+#ax[1].set_title("Front Propagation Detection")
+ax[1].legend()
+ax[1].grid(alpha=0.3)
+
+plt.savefig("T_half_position.pdf", bbox_inches='tight')
+plt.tight_layout()
+plt.show()
+
+
+# %% SLOPE VS FRONT DETECTION
+# great
+images = xarr_dat['images']
+time = images['time'].values
+
+# --- PARAMETERS ---
+y0 = 250
+x0 = 250
+n_points = 50
+
+# Transition window
+t_min, t_max = 60, 125
+
+# --- COORDINATES ---
+x_vals = np.linspace(0, images.shape[2]-1, n_points).astype(int)
+y_vals = np.linspace(0, images.shape[1]-1, n_points).astype(int)
+
+horizontal_coords = [(y0, x) for x in x_vals]
+vertical_coords   = [(y, x0) for y in y_vals]
+diag_coords       = list(zip(y_vals, x_vals))
+
+
+# --- FUNCTION: slope via linear fit ---
+def get_slope_profile(coords, sigma=3):
+    data = np.array([images[:, y, x] for (y, x) in coords]).T
+
+    # Smooth
+    data = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+    # Normalize
+    baseline = np.mean(data[10:20, :], axis=0)
+    data = data - baseline
+
+    # Select transition window
+    mask = (time >= t_min) & (time <= t_max)
+    t_fit = time[mask]
+
+    slopes = []
+
+    for i in range(data.shape[1]):
+        y_fit = data[mask, i]
+
+        # Linear fit: y = a*t + b
+        a, b = np.polyfit(t_fit, y_fit, 1)
+        slopes.append(a)
+
+    return np.array(slopes)
+
+
+# --- COMPUTE ---
+slope_h = get_slope_profile(horizontal_coords)
+slope_v = get_slope_profile(vertical_coords)
+slope_d = get_slope_profile(diag_coords)
+
+# --- CONSISTENT POSITION AXIS (CONVERTED TO um) ---
+# Conversion factor: pixel * 9 / 50
+pixel_to_um = 9 / 50
+
+pos_h = x_vals * pixel_to_um
+pos_v = y_vals * pixel_to_um
+pos_d = np.sqrt(x_vals**2 + y_vals**2) * pixel_to_um  # diagonal distance in um
+
+# Normalize positions (optional but recommended)
+pos_h = pos_h - pos_h.min()
+pos_v = pos_v - pos_v.min()
+pos_d = pos_d - pos_d.min()
+
+
+# --- PLOT ---
+fig, ax = plt.subplots(1, 2, figsize=(14,5))
+
+# LEFT IMAGE (CONVERTED TO um)
+img0 = images.isel(time=0)
+
+# Calculate physical dimensions for the image boundaries
+# extent = [left, right, bottom, top]
+img_height_um = images.shape[1] * pixel_to_um
+img_width_um  = images.shape[2] * pixel_to_um
+
+# We use origin='upper' implicitly because that's matplotlib's default for images
+ax[0].imshow(img0, cmap='magma', extent=[0, img_width_um, img_height_um, 0])
+
+hy, hx = zip(*horizontal_coords)
+vy, vx = zip(*vertical_coords)
+dy, dx = zip(*diag_coords)
+
+# Convert the scatter plot pixel coordinates to micrometers so they match the extent
+ax[0].scatter(np.array(hx) * pixel_to_um, np.array(hy) * pixel_to_um, color='lightgray', s=10)
+ax[0].scatter(np.array(vx) * pixel_to_um, np.array(vy) * pixel_to_um, color='gray', s=10)
+ax[0].scatter(np.array(dx) * pixel_to_um, np.array(dy) * pixel_to_um, color='black', s=10)
+
+ax[0].set_title("Selected Regions", fontsize=13)
+ax[0].set_xlabel("Width [$\\mu$m]", fontsize=11)
+ax[0].set_ylabel("Height [$\\mu$m]", fontsize=11)
+
+# RIGHT: CLEAN SLOPE PLOT 
+ax[1].plot(pos_h, slope_h, '-o', color='lightgray', label='Horizontal')
+ax[1].plot(pos_v, slope_v, '-o', color='gray', label='Vertical')
+ax[1].plot(pos_d, slope_d, '-o', color='black', label='Diagonal')
+
+ax[1].set_xlabel("Distance along line [$\\mu$m]", fontsize=13)
+ax[1].set_ylabel("Mean Slope $dI/dt$ [a.u./s]", fontsize=13)
+#ax[1].set_xlim()
+#ax[1].set_title("Growth Rate During Transition (60–125)")
+ax[1].legend()
+ax[1].grid(alpha=0.3)
+plt.savefig("slope_sco1.pdf", bbox_inches='tight')
+plt.tight_layout()
+plt.show()
+# %%
+# %% T1/2 FRONT DETECTION
+
+images = xarr_dat['images']
+time = images['time'].values
+
+# --- PARAMETERS ---
+y0 = 250
+x0 = 250
+n_points = 50
+
+x_vals = np.linspace(0, images.shape[2]-1, n_points).astype(int)
+y_vals = np.linspace(0, images.shape[1]-1, n_points).astype(int)
+
+horizontal_coords = [(y0, x) for x in x_vals]
+vertical_coords   = [(y, x0) for y in y_vals]
+diag_coords       = list(zip(y_vals, x_vals))
+
+
+# --- FUNCTION: find transition time ---
+def get_transition_times(coords, sigma=2):
+    data = np.array([images[:, y, x] for (y, x) in coords]).T
+
+    # Smooth
+    data = gaussian_filter1d(data, sigma=sigma, axis=0)
+
+    # Normalize
+    baseline = np.mean(data[10:20, :], axis=0)
+    data = data - baseline
+
+    t_trans = []
+
+    for i in range(data.shape[1]):
+        y = data[:, i]
+
+        # Define 50% level
+        y_min = np.min(y)
+        y_max = np.max(y)
+        y_half = y_min + 0.5 * (y_max - y_min)
+
+        # Find closest point
+        idx = np.argmin(np.abs(y - y_half))
+        t_trans.append(time[idx])
+
+    return np.array(t_trans)
+
+
+# --- COMPUTE ---
+t_h = get_transition_times(horizontal_coords)
+t_v = get_transition_times(vertical_coords)
+t_d = get_transition_times(diag_coords)
+
+# --- POSITION AXIS (CONVERTED TO um) ---
+# Conversion factor: pixel * 9 / 50
+pixel_to_um = 9 / 50
+
+pos_h = x_vals * pixel_to_um
+pos_v = y_vals * pixel_to_um
+pos_d = np.sqrt(x_vals**2 + y_vals**2) * pixel_to_um
+
+# Normalize positions
+pos_h = pos_h - pos_h.min()
+pos_v = pos_v - pos_v.min()
+pos_d = pos_d - pos_d.min()
+
+
+# --- PLOT ---
+fig, ax = plt.subplots(1, 2, figsize=(14,5))
+
+# LEFT IMAGE (CONVERTED TO um)
+img0 = images.isel(time=0)
+
+# Calculate physical dimensions for the image boundaries
+img_height_um = images.shape[1] * pixel_to_um
+img_width_um  = images.shape[2] * pixel_to_um
+
+# Map display window to um using extent
+ax[0].imshow(img0, cmap='magma', extent=[0, img_width_um, img_height_um, 0])
+
+hy, hx = zip(*horizontal_coords)
+vy, vx = zip(*vertical_coords)
+dy, dx = zip(*diag_coords)
+
+# Convert tracking dot coordinates to um
+ax[0].scatter(np.array(hx) * pixel_to_um, np.array(hy) * pixel_to_um, color='lightgray', s=10)
+ax[0].scatter(np.array(vx) * pixel_to_um, np.array(vy) * pixel_to_um, color='gray', s=10)
+ax[0].scatter(np.array(dx) * pixel_to_um, np.array(dy) * pixel_to_um, color='black', s=10)
+
+ax[0].set_title("Selected Regions", fontsize=13)
+ax[0].set_xlabel("Width [$\\mu$m]", fontsize=11)
+ax[0].set_ylabel("Height [$\\mu$m]", fontsize=11)
+
+# RIGHT: FRONT DETECTION
+ax[1].plot(pos_h, t_h, '-o', color='lightgray', label='Horizontal')
+ax[1].plot(pos_v, t_v, '-o', color='gray', label='Vertical')
+ax[1].plot(pos_d, t_d, '-o', color='black', label='Diagonal')
+
+# Updated label from pixels to um
+ax[1].set_xlabel("Distance along line [$\\mu$m]", fontsize=13)
+ax[1].set_ylabel("Transition Time $T_{1/2}$ [s]", fontsize=13)
+#ax[1].set_title("Front Propagation Detection")
+ax[1].legend()
+ax[1].grid(alpha=0.3)
+
+plt.savefig("T_half_position.pdf", bbox_inches='tight')
+plt.tight_layout()
+plt.show()
+# %%
