@@ -1,0 +1,389 @@
+#Quantitative analysis of crystallisation time maps for c.py
+# %%
+import os
+from PIL import Image
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+import time
+
+import zarr
+import glob
+import json
+#from utils.utils_analysis_iscat import *
+
+from functools import partial
+from matplotlib_scalebar.scalebar import ScaleBar
+from matplotlib.animation import FuncAnimation
+
+import zarr # to store the images
+import xarray as xr # to load the zarr data
+import glob
+# %%
+#Loading the common path and separating the pl data from the iSCAT data
+common_path = r"C:\Users\phondCutie\Desktop\iSCAT (Mauk)\260521\260521second"
+files_pl = glob.glob(os.path.join(common_path, "*pl*"))
+files_scat = glob.glob(os.path.join(common_path, "*scat*"))
+files_meta = glob.glob(os.path.join(common_path, "*json*"))
+
+metadata = json.load(open(files_meta[0], 'r'))  # load the metadata json file
+fps = 1 #metadata['fps']  # frames per second
+
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+
+#pl_arr =xr.open_zarr(files_pl[select], consolidated = True ) 
+iscat_arr = xr.open_zarr(files_scat[select], consolidated=True)
+pl_arr = xr.open_zarr(files_pl[select], consolidated=True)
+
+# If you prefer working with a DataArray
+iscat_data = iscat_arr['data']  # Extract the data array
+pl_data = pl_arr['data']  # Extract the data array
+
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+scat_zarr = zarr.open(files_scat[select], mode='r')
+pl_zarr = zarr.open(files_pl[select], mode='r')
+import xarray as xr
+iscat_arr = xr.Dataset({'data': xr.DataArray(scat_zarr, dims=['time', 'x', 'y'])})
+pl_arr = xr.Dataset({'data': xr.DataArray(pl_zarr, dims=['time', 'x', 'y'])})
+
+
+
+# %%
+# kymograph intensity analysis for a selected line at the images
+
+mean_image = np.mean(iscat_arr['data'], axis=0)  # Average over time to get the mean image
+
+# Choose the row you want to inspect
+row = 130   # change this value
+
+# Plot the image with a line
+plt.imshow(mean_image, cmap='magma')
+
+# Draw a horizontal line segment only from x=150 to x=400
+plt.hlines(y=row, xmin=150, xmax=400, color='cyan', linestyle='--', linewidth=2, label=f'Row {row} (150-400)')
+
+plt.colorbar(label='Average Intensity')
+#plt.title("Mean Calibration Image")
+plt.legend()
+plt.savefig("rowplot.pdf", bbox_inches='tight')
+plt.show()
+
+
+# Extract intensity values along that row
+profile = mean_image[row, 150:400]
+
+# Plot the intensity profile
+plt.figure()
+plt.plot(np.arange(150, 400), profile)
+plt.xlabel("Pixel (x)")
+plt.ylabel("Intensity")
+plt.title(f"Intensity Profile Along Row {row}")
+plt.show()
+print(fps)
+# show me the kymograph of the selected line
+kymograph = iscat_arr['data'][:, row, 150:400]  # Extract the kymograph for the selected row and x-range
+spatial_size = (400-150 ) * 9 / 30  # Convert pixel range to micrometers (assuming 9 µm per 30 pixels)
+
+plt.figure(figsize=(10, 5))
+total_time = len(iscat_arr['data']) / fps
+plt.imshow(kymograph, aspect='auto', cmap='magma', extent=[-spatial_size/2, spatial_size/2, len(iscat_arr['data'])*fps, 0])
+plt.ylabel("Time [s]")
+plt.xlabel("Position [$\mu$m]")
+plt.savefig("kimo_wide.pdf", bbox_inches='tight')
+
+
+
+# %%
+# kymograph intensity analysis for a selected column at the images
+
+mean_image = np.mean(iscat_arr['data'], axis=0)  # Average over time to get the mean image
+
+# Choose the column you want to inspect
+col = 170   # change this value
+
+# Plot the image with a line
+plt.imshow(mean_image, cmap='magma')
+
+# Draw a vertical line segment only from y=150 to y=400
+plt.vlines(x=col, ymin=0, ymax=300, color='cyan', linestyle='--', linewidth=2, label=f'Col {col} (150-400)')
+
+plt.colorbar(label='Average Intensity')
+#plt.title("Mean Calibration Image")
+plt.legend()
+plt.savefig("colplot.pdf", bbox_inches='tight')
+plt.show()
+
+
+# Extract intensity values along that column
+profile = mean_image[0:290, col]
+
+# Plot the intensity profile
+plt.figure()
+plt.plot(np.arange(0, 290), profile)
+plt.xlabel("Pixel (y)")  # Updated label to reflect vertical axis
+plt.ylabel("Intensity")
+plt.title(f"Intensity Profile Along Column {col}")
+plt.show()
+print(fps)
+
+# show me the kymograph of the selected line
+kymograph = iscat_arr['data'][:, 0:290, col]  # Extract the kymograph for the selected column and y-range
+spatial_size = (290-0) * 9 / 30  # Convert pixel range to micrometers
+
+plt.figure(figsize=(10, 5))
+total_time = len(iscat_arr['data']) / fps
+plt.imshow(kymograph, aspect='auto', cmap='magma', extent=[-spatial_size/2, spatial_size/2, len(iscat_arr['data'])*fps, 0])
+plt.ylabel("Time [s]")
+plt.xlabel("Position [$\mu$m]")
+plt.savefig("kimo_natural.pdf", bbox_inches='tight')
+
+
+
+
+
+#%% 
+
+
+# crop the kymograph to only the first 900 seconds
+plt.figure(figsize=(10, 5))
+plt.imshow(kymograph[180:900], aspect='auto', cmap='magma', extent=[-spatial_size/2, spatial_size/2, 900, 180])
+plt.ylabel("Time (s)")
+plt.xlabel("Position ($\mu m$)")
+# axhline at 100, 200, 400 and 700
+colors = ['blue', 'green', 'cyan', 'red']
+for t, color in zip([100, 200, 400, 700], colors ):
+    plt.axhline(t, color=color, linestyle='--', label=f'Time {t}s')
+
+# plot frames and intensity profiles at these time points
+for t, color in zip([100, 200, 400, 700], colors):
+    frame_idx = t   # Convert time to frame index
+    if frame_idx < len(iscat_arr['data']):
+        fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+        # Show the frame at time t
+        ax[0].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+        ax[0].set_title(f"Frame at {t} seconds")
+        ax[0].axis('off')
+        ax[0].axhline(row, color=color, linestyle='--', label=f'Row {row}')
+        #ax[0].legend()
+        # Show the intensity profile along the selected row at time t
+        X = np.arange(150, 400) * 9 / 30 - spatial_size/2  # Convert pixel indices to micrometers
+        ax[1].plot( X, iscat_arr['data'][frame_idx, row, 150:400], color=color)
+        ax[1].set_title(f"Intensity Profile at {t} seconds")
+        ax[1].set_xlabel("Position ($\mu m$)")
+        ax[1].set_ylabel("Intensity")
+        plt.tight_layout()
+
+# %%
+# Plotting the lines from 150 to 132 across the kymograph to see the border movement over time with colormap to show the time progression
+
+plt.figure(figsize=(10, 5))
+cmap = plt.cm.viridis(np.linspace(0, 1, 20))  # Create a colormap with 30 colors
+from scipy.ndimage import gaussian_filter1d
+bsline = kymograph[170:180].mean(axis=0)  # Calculate the baseline as the average of the first 10 lines
+for i in range(10, ):
+    time_point =  175 - 2*i 
+    line = kymograph[time_point] / bsline  # Normalize the line by the baseline
+    line_smooth = gaussian_filter1d(line, sigma=2)  # Apply Gaussian smoothing to the line
+    plt.plot(np.arange(150, 400) * 9 / 30 - spatial_size/2, line_smooth,
+             color=cmap[i], label=f'Time {time_point}s')
+plt.xlabel("Position ($\mu m$)")
+plt.ylabel("Intensity")
+plt.title("Intensity Profiles at Different Time Points")
+plt.colormaps = plt.cm.viridis(np.linspace(0, 1, 20))  # Create a colormap with 20 colors
+plt.legend()
+
+
+
+# plot the kymograph with a line at the border position at each time point
+plt.figure(figsize=(10, 5))
+plt.imshow(kymograph[180:180], aspect='auto', cmap='magma', extent=[-spatial_size/2, spatial_size/2, len(iscat_arr['data'])*fps, 0])
+#plt.imshow(kymograph[180:180], aspect='auto', cmap='magma', extent=[-spatial_size/2,spatial_size/2,crop_end, crop_start] )
+
+
+
+plt.ylabel("Time [s]")
+
+plt.xlabel("Position ($\mu$m)")
+
+
+# %%
+# Plot intensity profiles from frame 190 down to 170
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter1d
+
+start_frame = 190#190
+end_frame = 170#170
+step = 2
+
+# Spatial calibration
+spatial_size = (400 - 150) * 9 / 30  # µm
+# Baseline: average around the latest frames
+bsline = kymograph[175:185].mean(axis=0)  #190:200
+# x-axis in µm
+x = np.linspace(
+    -spatial_size/2,
+    spatial_size/2,
+    kymograph.shape[1]
+)
+
+# ---- Plot intensity profiles ----
+frames = np.arange(start_frame, end_frame - 1, -step)
+plt.figure(figsize=(10, 5))
+cmap = plt.cm.viridis(np.linspace(0, 1, len(frames)))
+for i, frame in enumerate(frames):
+
+    line = kymograph[frame] / bsline
+    line_smooth = gaussian_filter1d(line, sigma=2)
+
+    plt.plot(
+        x,
+        line_smooth,
+        color=cmap[i],
+        label=f'{frame} s'
+    )
+
+plt.xlabel("Position [$\\mu$m]")
+plt.ylabel("Normalized intensity [a.u.]")
+#plt.title("Intensity Profiles During Early Crystal Growth")
+plt.legend()
+plt.tight_layout()
+plt.savefig("Intensity_zoom_laser.pdf", bbox_inches='tight')
+
+# ---- Plot corresponding kymograph section ----
+
+plt.figure(figsize=(10, 5))
+
+crop_start = 170
+crop_end = 190
+
+plt.imshow(
+    kymograph[crop_start:crop_end],
+    aspect='auto',
+    cmap='magma',
+    extent=[
+        -spatial_size/2,
+        spatial_size/2,
+        crop_end,     # top
+        crop_start    # bottom
+    ]
+)
+plt.ylabel("Time [s]")
+plt.xlabel("Position [$\\mu$m]")
+#plt.title("Kymograph: Frames 170–190")
+plt.colorbar(label="Intensity")
+plt.tight_layout()
+
+plt.savefig("kimo_zoom_laser.pdf", bbox_inches='tight')
+
+plt.show()
+
+
+
+
+
+
+# %%
+# find border in cropped kymograph
+from skimage import filters
+# Apply a Sobel filter to find edges in the kymograph
+edges = filters.sobel(kymograph[190:900, len(kymograph[0])//2:])
+
+# EDGES ACROSS THE ENTIRE WIDTH OF THE KYMOGRAPH
+#edges = filters.sobel(kymograph[500:900, :])  # If you want to find edges across the entire width of the kymograph
+
+plt.figure(figsize=(10, 5))
+plt.imshow(edges, aspect='auto', cmap='viridis', extent=[0, spatial_size/2, 900, 190])
+
+# entire width 
+#plt.imshow(edges, aspect='auto', cmap='viridis', extent=[-spatial_size/2, spatial_size/2, 900, 190])
+plt.ylabel("Time (s)")
+plt.xlabel("Position ($\mu m$)")
+plt.colorbar(label='Edge Strength')
+
+
+# %%
+# find highest position at each time point in the kymograph
+border_positions = []
+
+idx = 0
+max_width = 12  # maximum width to look around the previous position to avoid noise
+for edge in edges[190:900]:  #before we had t=190.! at first 
+    if idx == 0:
+        border_pos = np.argmax(edge)  # Find the index of the maximum value in the edge profile
+        border_positions.append(border_pos * 9/30)
+    else:
+        # make sure the border is close to the previous position to avoid noise
+        edge_around = edge[border_pos - max_width : border_pos + max_width]  # Look around the previous position
+        if len(edge_around) == 0:  # If we are at the edge of the array, just take the max
+            border_pos = np.argmax(edge)
+            border_positions.append(border_pos * 9/30)
+        else:
+            border_pos = np.argmax(edge_around) + border_pos - max_width  # Update the border position
+            border_positions.append(border_pos * 9/30)  # Convert pixel index to micrometers
+    idx += 1
+
+
+plt.figure(figsize=(10, 5))
+time_arr = np.arange(len(border_positions)) / fps + 190  # Convert frame indices to time in seconds
+plt.plot( time_arr, border_positions)
+plt.xlabel("Time (s)", fontsize=16)
+plt.ylabel("Border Position ($\mu m$)", fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=15)
+plt.xlim(190, 190+len(border_positions)/fps)  # Set x-axis limits to match the time range of the border positions
+plt.ylim(5, 40)
+
+
+
+
+
+# %%
+# Fitting a polynomial to the border position over time to find the crystallisation time.
+
+degree = 3  # quadratic, change to 3, 4, etc. if needed
+
+coeffs = np.polyfit(time_arr, border_positions, degree)
+
+fitted_values = np.polyval(coeffs, time_arr)
+
+plt.figure(figsize=(10, 5))
+plt.plot(time_arr, border_positions, '.', label='Border Position')
+plt.plot(time_arr, fitted_values, 'r-', linewidth=2,
+         label=f'Polynomial degree {degree}')
+
+plt.xlabel("Time (s)", fontsize=16)
+plt.ylabel("Border Position ($\mu m$)", fontsize=16)
+plt.tick_params(axis='both', which='major', labelsize=15)
+plt.ylim(5,40)
+plt.legend()
+plt.show()
+
+print("Polynomial coefficients:")
+print(coeffs)
+
+coeffs, cov = np.polyfit(
+    time_arr,
+    border_positions,
+    degree,
+    cov=True
+)
+
+errors = np.sqrt(np.diag(cov))
+
+for i, (c, e) in enumerate(zip(coeffs, errors)):
+    print(f"c{i} = {c:.5e} ± {e:.5e}")
+# %%
+# calculate the resolution as the av noise in the border position
+fitted_values_crop = fitted_values[00:]  # Crop the fitted values to match the time range of the border positions
+print(np.diff(fitted_values_crop).mean())  # Calculate the difference between consecutive fitted values
+# %%
