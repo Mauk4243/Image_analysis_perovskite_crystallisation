@@ -1,0 +1,988 @@
+# %%
+import os
+from PIL import Image
+import numpy as np
+import json
+import matplotlib.pyplot as plt
+import time
+
+import zarr
+import glob
+import json
+#from utils.utils_analysis_iscat import *
+
+from functools import partial
+from matplotlib_scalebar.scalebar import ScaleBar
+from matplotlib.animation import FuncAnimation
+
+import zarr # to store the images
+import xarray as xr # to load the zarr data
+
+# %%
+#Loading the common path and separating the pl data from the iSCAT data
+common_path = r"C:\Users\phondCutie\Desktop\iSCAT (Mauk)\Laser_PEA\260512_first"
+files_pl = glob.glob(os.path.join(common_path, "*pl*"))
+files_scat = glob.glob(os.path.join(common_path, "*scat*"))
+files_meta = glob.glob(os.path.join(common_path, "*json*"))
+
+# %% Second data set
+#Loading the common path and separating the pl data from the iSCAT data
+common_path = r"C:\Users\phondCutie\Desktop\iSCAT (Mauk)\ozone20xshave\ozone20xshave20"
+files_pl2 = glob.glob(os.path.join(common_path, "*pl*"))
+files_scat2 = glob.glob(os.path.join(common_path, "*scat*"))
+files_meta2 = glob.glob(os.path.join(common_path, "*json*"))
+
+
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+scat_zarr = zarr.open(files_scat[select], mode='r')
+pl_zarr = zarr.open(files_pl[select], mode='r')
+import xarray as xr
+iscat_arr = xr.Dataset({'data': xr.DataArray(scat_zarr, dims=['time', 'x', 'y'])})
+pl_arr = xr.Dataset({'data': xr.DataArray(pl_zarr, dims=['time', 'x', 'y'])})
+
+#pl_arr =xr.open_zarr(files_pl[select], consolidated = True ) 
+#iscat_arr = xr.open_zarr(files_scat[select], consolidated= True)
+
+# If you prefer working with a DataArray
+iscat_data = iscat_arr['data']  # Extract the data array
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+scat_zarr2 = zarr.open(files_scat2[select], mode='r')
+pl_zarr2 = zarr.open(files_pl2[select], mode='r')
+import xarray as xr
+iscat_arr2 = xr.Dataset({'data': xr.DataArray(scat_zarr2, dims=['time', 'x', 'y'])})
+pl_arr2 = xr.Dataset({'data': xr.DataArray(pl_zarr2, dims=['time', 'x', 'y'])})
+
+
+# 1. Figure out total frames
+total_frames = iscat_arr2.sizes['time']
+
+# 2. Create an index array that skips 1176 to 1666
+# This joins 0->1175 and 1667->end
+valid_indices = np.r_[0:1176, 1667:total_frames]
+
+# 3. Use .isel() with the index array instead of a slice
+iscat_arr2 = iscat_arr2.isel(time=valid_indices)
+pl_arr2 = pl_arr2.isel(time=valid_indices)
+
+# Extract your DataArray to keep going
+iscat_data2 = iscat_arr2['data']
+
+
+#pl_arr =xr.open_zarr(files_pl[select], consolidated = True ) 
+#iscat_arr = xr.open_zarr(files_scat[select], consolidated= True)
+
+# If you prefer working with a DataArray
+iscat_data2 = iscat_arr2['data']  # Extract the data array
+
+
+
+# %%
+# 1. Load the meta data and the two individual zarr files for PL and iSCAT
+select = 0  # Change this index to select different files from the list
+#metadata = json.load(open(files_meta[select], 'r'))  # load the metadata json file
+
+
+#pl_arr =xr.open_zarr(files_pl[select], consolidated = True ) 
+iscat_arr = xr.open_zarr(files_scat[select], consolidated=True)
+pl_arr = xr.open_zarr(files_pl[select], consolidated=True)
+
+# If you prefer working with a DataArray
+iscat_data = iscat_arr['data']  # Extract the data array
+pl_data = pl_arr['data']  # Extract the data array
+
+
+# %% ------------------------------------------
+# First, understand the structure of your data
+print("iSCAT dataset structure:")
+print(iscat_arr)
+print("\nVariables:", list(iscat_arr.variables))
+print("Dimensions:", iscat_arr.dims)
+print("Data shape:", iscat_arr['data'].shape)
+
+# Second, the pl dataset
+print("\nPL dataset structure:")
+print(pl_arr)
+print("\nVariables:", list(pl_arr.variables))
+print("Dimensions:", pl_arr.dims)
+print("Data shape:", pl_arr['data'].shape)
+# ---------------------------------------------
+
+# Also for other dataset
+print("\nSecond iSCAT dataset structure:")
+print(iscat_arr2)
+print("\nVariables:", list(iscat_arr2.variables))
+print("Dimensions:", iscat_arr2.dims)
+print("Data shape:", iscat_arr2['data'].shape)
+
+# second pl dataset for second file 
+print("\nSecond PL dataset structure:")
+print(pl_arr2)
+print("\nVariables:", list(pl_arr2.variables))
+print("Dimensions:", pl_arr2.dims)
+print("Data shape:", pl_arr2['data'].shape)
+
+# %% ONLY iSCAT DATA LOOKOUT
+
+# 1. Set the path (Update this to your local /Volumes/ mount)
+zarr_path = r
+              
+#/Volumes/pshare/Lab/Mauk/260311/260311_SC_1773246255.zarr
+
+# 2. Open the array (this doesn't load the data yet, just the metadata)
+data_stack = xr.open_zarr(zarr_path,)
+
+# Check the shape: Expecting (Frames, Height, Width)
+print(f"Array shape: {data_stack['data'].shape}")
+
+image_arr = data_stack['data']  # Access the 'images' array within the zarr group
+time_arr = data_stack['time']  # Access the 'time' array within the zarr group
+
+# %%
+import matplotlib.pyplot as plt
+
+# 1. Change to a 4x5 grid. Adjusted figsize to (15, 12) so the grid is proportional.
+fig, ax = plt.subplots(4, 5, figsize=(15, 12))
+
+# 2. Flatten the 2D array of axes so we can iterate through them with a single index 'i'
+ax_flat = ax.flatten()
+
+for i in range(20):
+    frame_idx = len(iscat_arr['data']) // 20 * i  # Get indices for 20 evenly spaced frames
+    
+    # Use the flattened axes array here
+    ax_flat[i].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+    ax_flat[i].set_title(f"Time {iscat_arr['time'][frame_idx].values:.2f} s")
+
+    ax_flat[i].axis('on')
+
+# 3. Use tight_layout so the titles and axis labels don't overlap with other rows
+plt.tight_layout()
+plt.show()
+
+#%%
+# mean intensity
+
+
+
+# %%
+# plot frame 200 with a line at row 140 to check the coordinates of the images
+plt.imshow(iscat_arr['data'][200], cmap='magma')
+column = 220 
+plt.axvline(column, color='cyan', linestyle='--', label=f'Row {row}')
+plt.colorbar(label='Intensity')
+plt.title("Frame 200 with Line at Row 140")
+plt.legend()
+
+plt.show()
+
+
+#%%
+#%%
+# 1. Average only over 'x' (leaves a 2D 'time' and 'y' array)
+mean_image = iscat_data.mean(dim='x').compute()  
+
+# Let's say you want y-coordinate index 280, across time frames 260 to 300
+y_coord = 280 
+
+# 2. Extract values over a time range for that specific Y row/column
+# Assumes xarray dimensions are (time, y)
+profile = mean_image[260:300, y_coord]
+
+# Plot the intensity profile over time
+plt.figure()
+plt.plot(profile)
+plt.xlabel("Time / Frame")
+plt.ylabel("Intensity")
+plt.title(f"Intensity Over Time at Y-Coordinate {y_coord}")
+plt.show()
+
+
+
+# %%
+# plot frame 200 with a line at row 140 to check the coordinates of the images
+plt.imshow(iscat_arr['data'][200], cmap='magma')
+row = 140 
+column = 280
+plt.plot(column, row, marker='o', color='cyan', label=f'Point ({column}, {row})')
+#plt.axhline(row, color='cyan', linestyle='--', label=f'Row {row}')
+plt.colorbar(label='Intensity')
+plt.title("Frame 200 with Line at Row 140")
+plt.legend()
+
+plt.show()
+
+
+# %%
+plt.imshow(iscat_arr['data'][200], cmap='magma')
+
+
+img = iscat_arr['data'][200]
+nrows, ncols = img.shape
+
+# Diagonal from bottom-left to top-right
+plt.plot([0, ncols - 1], [nrows - 1, 0],
+         color='cyan', linestyle='--', linewidth=2,
+         label='Diagonal')
+
+plt.colorbar(label='Intensity')
+plt.title("Frame 200 with Diagonal Line")
+plt.legend()
+plt.show()
+
+
+# %%
+%matplotlib inline
+# plottinf the first and last frame of the iSCAT and pl data to check if it loads correctly
+plt.figure(figsize=(12, 6))
+plt.subplot(2, 2, 1)
+plt.imshow(iscat_arr['data'][0], cmap='gray')
+plt.title('iSCAT - First Frame')
+plt.axis('off')
+plt.subplot(2, 2, 2)
+plt.imshow(iscat_arr['data'][-1], cmap='gray')
+plt.title('iSCAT - Last Frame')
+plt.axis('off')
+plt.subplot(2, 2, 3)
+plt.imshow(pl_arr['data'][0], cmap='gray')
+plt.title('PL - First Frame')
+plt.axis('off')
+plt.subplot(2, 2, 4)
+plt.imshow(pl_arr['data'][-1], cmap='gray')
+plt.title('PL - Last Frame')
+plt.axis('off')
+plt.show()
+
+# %%
+# plotting intensity over time for 4 quadrant over all the frames
+intensity = iscat_arr['data'].mean(dim=['y', 'x']).compute()  # Compute mean intensity over y and x dimensions
+# 1. Get the actual time array from your xarray object
+# This ensures 'times' has exactly the same length as your images (...)
+images = iscat_data  # This is your 3D array with dimensions (time, y, x)
+actual_times = iscat_arr['time'].values 
+
+# 2. Get height and width dynamically
+h, w = images.shape[1], images.shape[2]
+
+# 3. Calculate Quadrants (This creates 1 value per frame for the whole file)
+q1 = images[:, :h//2, :w//2].mean(dim=['y', 'x']).compute()
+q2 = images[:, :h//2, w//2:].mean(dim=['y', 'x']).compute()
+q3 = images[:, h//2:, :w//2].mean(dim=['y', 'x']).compute() 
+q4 = images[:, h//2:, w//2:].mean(dim=['y', 'x']).compute()
+
+# 2. Check if the shapes match before plotting (Good for debugging)
+print(f"Time points: {len(actual_times)}")
+print(f"Data points: {len(q1)}")
+
+# 3. Plotting
+plt.figure(figsize=(10, 5))
+
+# 2. Plot each quadrant with defined colors
+plt.plot(actual_times, q1, label='Top-Left (Q1)', color='blue')
+plt.plot(actual_times, q2, label='Top-Right (Q2)', color='gray')
+plt.plot(actual_times, q3, label='Bottom-Left (Q3)', color='red') 
+plt.plot(actual_times, q4, label='Bottom-Right (Q4)', color='green')
+
+plt.xlabel("Time [s]")
+plt.ylabel("Mean Intensity")
+#plt.title("Intensity vs Time (All Quadrants)")
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+
+
+
+
+
+# %%
+###############################
+#### MULTI-REGION ANALYSIS ####
+###############################
+from matplotlib.patches import Rectangle
+
+# (Make sure to run %matplotlib qt in the previous cell or above)
+%matplotlib qt
+
+# 1. Generate the differential image
+im_start = iscat_arr['data'][0].values
+im_final = iscat_arr['data'][-1].values
+differential_image = (im_final / 65000) - (im_start / 65000)
+
+def select_multiple_rois(image, title="Select Multiple ROIs"):
+
+    fig, ax = plt.subplots()
+    ax.imshow(image, cmap='gray')
+    ax.set_title(title)
+    rois = []
+    # Add a button/key to finish the selection of ROIs, so that the user can select 
+    # as many ROIs as they want and then press Enter to finish the selection
+    def on_key(event):
+        if event.key == 'enter':
+            plt.close(fig)
+    fig.canvas.mpl_connect('key_press_event', on_key)
+    while True:
+        roi = plt.ginput(2, timeout=-1)  # Wait for user to draw a rectangle with two clicks
+        if len(roi) == 2:
+            x_min = int(min(roi[0][0], roi[1][0]))
+            x_max = int(max(roi[0][0], roi[1][0]))
+            y_min = int(min(roi[0][1], roi[1][1]))
+            y_max = int(max(roi[0][1], roi[1][1]))
+            rois.append({'xmin': x_min, 'xmax': x_max, 'ymin': y_min, 'ymax': y_max})
+            # Draw the rectangle on the image to show the selection
+            rect = Rectangle((x_min, y_min), x_max - x_min, y_max - y_min,
+                             edgecolor='red', facecolor='none', linewidth=2)
+            ax.add_patch(rect)
+            plt.draw()
+        else:
+            print("No valid ROI selected. Ending selection.")
+            break
+    
+    plt.close(fig)
+    return rois
+
+# 2. Call the multi-region tool
+print("Opening selection window...")
+selected_rois = select_multiple_rois(differential_image)
+
+# Return to inline mode so the following plots appear in the notebook
+%matplotlib inline
+
+# 3. Apply ROIs to the dataset (Lazy multi-slicing)
+dataset_rois = []
+
+if selected_rois is not None:
+    for i, roi in enumerate(selected_rois):
+        # Lazy cropping for each selected region
+        crop = iscat_arr.isel(x=slice(roi['xmin'], roi['xmax']),
+                                y=slice(roi['ymin'], roi['ymax']))
+        dataset_rois.append(crop)
+        print(f"ROI {i+1} dataset generated with size: {crop['data'].shape}")
+else:
+    # If you didn't select anything, put the entire array in the list so the code doesn't fail
+    dataset_rois.append(iscat_arr)
+
+# Plot each rectangle ROI on the original image to check the selection with a different color for each rectangle
+colors = ['red', 'blue', 'green', 'orange', 'purple', 'cyan', 'magenta', 'yellow', 'lime', 'pink']
+plt.figure(figsize=(6,6))
+plt.imshow(differential_image, cmap='gray')
+for idx, roi in enumerate(selected_rois):
+    rect = Rectangle((roi['xmin'], roi['ymin']), roi['xmax'] - roi['xmin'], roi['ymax'] - roi['ymin'],
+                     edgecolor=colors[idx % len(colors)], facecolor='none', linewidth=2, label=f'ROI {idx + 1}')
+    plt.gca().add_patch(rect)
+
+# For each ROI plot intensity vs time
+plt.figure(figsize=(10,6))
+for idx, x_arr_roi in enumerate(dataset_rois):
+    mean_intensity_roi = x_arr_roi['data'].mean(dim=['y', 'x'])
+    plt.plot(x_arr_roi['time'], mean_intensity_roi ,#/ mean_intensity_roi[0],
+              label=f'Mean Intensity in ROI {idx + 1}', color = colors[idx % len(colors)])
+plt.xlabel('Time (s)')
+plt.ylabel('Mean Intensity')
+plt.legend()
+
+#print for each ROI the mean intensity at the first frame and the last frame 
+for idx, x_arr_roi in enumerate(dataset_rois):
+    mean_intensity_roi = x_arr_roi['data'].mean(dim=['y', 'x'])
+    print(f"ROI {idx + 1}: Mean Intensity at first frame: {mean_intensity_roi[0].values}, Mean Intensity at last frame: {mean_intensity_roi[-1].values}")
+    
+
+
+
+
+# %%
+# 3. Plot a few frames with scalebar on the first frame. 
+# Every pixel is 9 microns, so the scalebar should be 10 pixels for 90 microns.
+# The scalebar should be white on the top left corner of the image and should be visible on the first frame. 
+
+from matplotlib_scalebar.scalebar import ScaleBar
+
+# Setup the 1x5 subplot grid
+fig, ax = plt.subplots(1, 5, figsize=(15, 3),)
+
+# also include a point in every image for the laser position at (280, 140) to check if the coordinates are correct
+laser_x, laser_y = 280, 140
+
+
+objective = 10 
+mag = 1.5 # Extra Magnification 
+total_mag = objective * mag
+print(total_mag)
+# 1 pixel = 0.6 microns = 0.6e-6 meters (or 0.6 micrometers)
+# The dx argument takes the size of one pixel in the chosen units.
+scalebar = ScaleBar(
+    dx= 9/ total_mag, 
+    length_fraction = 0.4,
+    box_color="white",
+    box_alpha=0.8,
+    units="um", 
+    fixed_value=10,          # Forces the scalebar to be exactly 90 microns (10 pixels)
+    location="upper left",   # Places it in the top left corner
+    color="black",           # Color of the bar itself
+    frameon=True            # Removes the bounding box background so it sits cleanly on the image
+)
+# get the time instead of frames and plot evenly spaced time points instead of frames
+for i in range(5):
+    frame_idx = len(iscat_arr['data']) // 5 * i  # Get indices for 5 evenly spaced frames
+    
+    # Plot the image on the specific subplot axis
+    ax[i].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+    ax[i].set_title(f"Time {frame_idx} s")
+    ax[i].axis('off')
+    ax[i].plot(laser_x, laser_y, marker='o', color='white', label=f'Laser Position ({laser_x}, {laser_y})')
+
+    
+    # Add the scalebar ONLY to the first frame (index 0)
+    if i == 0:
+        ax[i].add_artist(scalebar)
+
+plt.tight_layout()
+
+plt.savefig("frames_laser.pdf", bbox_inches='tight')
+plt.show()
+
+'''
+fig, ax = plt.subplots( 1,5, figsize=(15,3))
+for i in range(5):
+    frame_idx = len(iscat_arr['data']) // 5 * i  # Get indices for 5 evenly spaced frames
+    ax[i].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+    ax[i].set_title(f"Frame {frame_idx}")
+    ax[i].axis('off')
+'''
+
+# %%
+
+
+fig, ax = plt.subplots( 1,10, figsize=(15,3))
+for i in range(10):
+    frame_idx = len(iscat_arr['data']) // 10 * i  # Get indices for 10 evenly spaced frames
+    ax[i].imshow(iscat_arr['data'][frame_idx], cmap='magma')
+    ax[i].set_title(f"Frame {frame_idx}")
+    ax[i].axis('off')
+
+
+
+# %%
+# 3. Plot a few frames with scalebar on the first frame. 
+# Every pixel is 9 microns, so the scalebar should be 10 pixels for 90 microns.
+# The scalebar should be white on the top left corner of the image and should be visible on the first frame. 
+# Plotting the frames from another file under the same conditions underneath the first one to compare the difference between the two files. 
+
+import matplotlib.pyplot as plt
+from matplotlib_scalebar.scalebar import ScaleBar
+
+# Setup the 1x5 subplot grid
+fig, ax = plt.subplots(1, 5, figsize=(15, 3))
+# Setup the 2x5 subplot grid (removed the unused 1x5 figure)
+fig2, ax2 = plt.subplots(2, 5, figsize=(15, 6))
+
+objective = 20 
+mag = 1.5 # Extra Magnification 
+total_mag = objective * mag
+print(total_mag)
+
+# Define scalebar parameters based on "Every pixel is 9 microns"
+# We create TWO distinct instances so they can be placed on separate axes.
+scalebar1 = ScaleBar(
+    dx= 9/ total_mag, 
+    length_fraction = 0.4,
+    box_color="white",
+    box_alpha=0.8,
+    units="um", 
+    fixed_value=10,          # Forces the scalebar to be exactly 90 microns (10 pixels)
+    location="upper left",   # Places it in the top left corner
+    color="black",           # Color of the bar itself
+    frameon=True               # No background box, sits cleanly on magma background
+)
+
+scalebar2 = ScaleBar(
+    dx= 9/ total_mag, 
+    length_fraction = 0.4,
+    box_color="white",
+    box_alpha=0.8,
+    units="um", 
+    fixed_value=10,          # Forces the scalebar to be exactly 90 microns (10 pixels)
+    location="upper left",   # Places it in the top left corner
+    color="black",           # Color of the bar itself
+    frameon=True               # No background box, sits cleanly on magma background
+)
+
+# Loop to plot evenly spaced frames
+for i in range(5):
+    # Get indices for 5 evenly spaced frames
+    frame_idx2 = len(iscat_arr['data']) // 5 * i  
+    frame_idx = len(iscat_arr2['data']) // 5 * i  
+    
+    # Plot File 1 (Top Row)
+    ax2[0, i].imshow(iscat_arr['data'][frame_idx2], cmap='magma')
+    ax2[0, i].set_title(f"Time {frame_idx2} s")
+    ax2[0, i].axis('off')
+    
+    # Plot File 2 (Bottom Row)
+    ax2[1, i].imshow(iscat_arr2['data'][frame_idx], cmap='magma')
+    ax2[1, i].set_title(f"Time {frame_idx} s")
+    ax2[1, i].axis('off')
+    
+    # Add the independent scalebars ONLY to the first column (index 0)
+    if i == 0:
+        ax2[0, i].add_artist(scalebar1)
+        ax2[1, i].add_artist(scalebar2)
+
+plt.tight_layout()
+plt.savefig("frames_bothozone.pdf", bbox_inches='tight')
+plt.show()
+
+
+
+# %%
+# PLATEAU TIME ANALYSIS
+# Plotting the other dataset with the same code to compare the difference between the two files.
+
+images = iscat_data
+
+times = iscat_arr['time'].values
+
+from scipy.ndimage import gaussian_filter1d
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ============================================================
+# PARAMETERS
+# ============================================================
+
+block_size = 1
+smooth_sigma = 0.1
+epsilon = 0.04
+min_consecutive = 20
+
+# ============================================================
+# ENSURE CONSISTENT LENGTHS
+# ============================================================
+
+n_frames = min(images.shape[0], len(times))
+images = images[:n_frames]
+times = times[:n_frames]
+
+# ============================================================
+# COARSE GRAINING
+# ============================================================
+
+coarse = images.coarsen(
+    x=block_size,
+    y=block_size,
+    boundary='trim'
+).mean()
+
+coarse_data = coarse.values
+n_time, ny, nx = coarse_data.shape
+
+# ============================================================
+# STORAGE DATASET 1
+# ============================================================
+
+crystal_mask = np.zeros((ny, nx), dtype=bool)
+crystallisation_time = np.full((ny, nx), np.nan)
+trace_array = np.zeros((ny, nx, n_time))
+
+# ============================================================
+# MAIN LOOP DATASET 1
+# ============================================================
+
+for iy in range(ny):
+
+    for ix in range(nx):
+
+        trace = coarse_data[:, iy, ix].astype(float)
+
+        if trace[0] == 0:
+            continue
+
+        trace = (
+            trace - trace[0]
+        ) / np.abs(trace[0])
+
+        trace_smooth = gaussian_filter1d(
+            trace,
+            sigma=smooth_sigma
+        )
+
+        trace_array[iy, ix] = trace_smooth
+
+        I_final = np.median(trace_smooth[-30:])
+        I_initial = np.mean(trace_smooth[:10])
+
+        net_change = abs(I_final - I_initial)
+
+        if net_change < 0.03:   #set this to 0.01
+            continue
+
+        distance = np.abs(
+            trace_smooth - I_final
+        )
+
+        inside = distance < epsilon
+
+        count = 0
+
+        for t in range(n_time):
+
+            if inside[t]:
+                count += 1
+            else:
+                count = 0
+
+            if count >= min_consecutive:
+
+                crystal_mask[iy, ix] = True
+
+                crystallisation_frame = (
+                    t - min_consecutive + 1
+                )
+
+                crystallisation_time[iy, ix] = (
+                    times[crystallisation_frame]
+                )
+
+                break
+
+
+# ============================================================
+# VISUALIZE CRYSTALLISATION TIME MAPS
+# ============================================================
+# %%
+
+%matplotlib inline
+
+crystallization_time_display = np.copy(crystallisation_time)
+crystallization_time_display[~crystal_mask] = np.nan  # Set non-crystal pixels to NaN for better visualization
+
+plt.figure(figsize=(10,8))
+
+
+# In your plt.imshow call, add the extent parameter:
+im = plt.imshow(
+    crystallization_time_display,
+    aspect='auto',
+    origin='upper',
+    cmap='magma',
+    vmin=0, vmax=500, 
+    extent=[nx, 0, ny, 0]  # Swapping '0, nx' to 'nx, 0' forces the X-axis to flip visually
+)
+
+
+plt.xticks([])
+plt.yticks([])
+
+#plt.scatter(144, 140,   color='red',   marker='x',   s=150,   linewidths=2)
+total_mag = 30
+#plt.title("Crystallisation Time Map")
+#plt.xlabel("X [pixels]")
+#plt.ylabel("Y [pixels]")
+# Add scalebar for 10 pixels (90 microns)
+scalebar = ScaleBar(
+    dx= 9/ total_mag, 
+    length_fraction = 0.4,
+    box_color="white",
+    box_alpha=0.8,
+    units="um", 
+    fixed_value=10,          # Forces the scalebar to be exactly 90 microns (10 pixels)
+    location="upper left",   # Places it in the top left corner
+    color="black",           # Color of the bar itself
+    frameon=True               # No background box, sits cleanly on magma background
+)
+
+# Add colorbar
+cbar = plt.colorbar(im)
+cbar.set_label("Crystallisation Time [s]")
+# adding the scale bar at the left top corner of the image
+plt.gca().add_artist(scalebar)
+plt.savefig("map_natural.pdf", bbox_inches='tight')
+
+
+plt.show()
+# ============================================================
+# AREA GROWTH DATASET 
+# ============================================================
+
+pixel_size_um = 0.3  # µm per pixel
+
+
+area_growth = []
+
+for t in range(n_time):
+
+    area = np.sum(
+    crystallisation_time <= times[t]
+)
+    area_um2= area * (block_size * pixel_size_um)**2
+
+    area_growth.append(area_um2)
+
+area_growth = np.array(area_growth)
+
+
+# ============================================================
+# PLOT AREA GROWTH
+# ============================================================
+
+%matplotlib inline
+
+plt.figure(figsize=(10,5))
+plt.plot(
+    times[:len(area_growth)],
+    
+    area_growth,
+    linewidth=2,
+    label='Dataset 1'
+)
+
+plt.xlabel("Time $T$ [s]")
+plt.ylabel(r"Crystal Area $A$ [$\mu$m$^2$]")
+#plt.xlim(0,500)
+#plt.ylim(0, 10000)
+plt.grid(alpha=0.3)
+plt.legend()
+plt.savefig("growth_natural.pdf", bbox_inches='tight')
+plt.show()
+
+
+
+# %%
+plt.figure(figsize=(8,5))
+
+plt.plot(times, area_growth)
+plt.ylim(0, 6)
+plt.xlim(0,20)  # adjust later
+plt.grid()
+# fitting linear
+
+
+
+plt.xlabel("Time [s]")
+plt.ylabel(r"Area [$\mu$m$^2$]")
+
+plt.show()
+
+
+
+
+
+
+
+
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8, 5))
+
+# 1. Plot your original area growth data
+plt.plot(times, area_growth, label='Data', color='black', alpha=0.7)
+
+# ============================================================
+# QUADRATIC FITTING & STANDARD DEVIATION BANDS
+# ============================================================
+# Crop data to match your visual x-limits (0 to 20s) for an accurate fit
+fit_mask = (times >= 0) & (times <= 20)
+t_fit = times[fit_mask]
+a_fit = area_growth[fit_mask]
+
+if len(t_fit) > 2:
+    # Perform the quadratic fit (degree = 2)
+    # Returns coefficients [a, b, c] for a*t^2 + b*t + c
+    coefficients = np.polyfit(t_fit, a_fit, 2)
+    
+    # Evaluate the quadratic model over the fitted time points
+    area_modeled = np.polyval(coefficients, t_fit)
+    
+    # Calculate the standard deviation (σ) of the residuals (noise)
+    residuals = a_fit - area_modeled
+    std_dev = np.std(residuals)
+    
+    # Plot the quadratic fit line
+    plt.plot(t_fit, area_modeled, color='red', linewidth=2, 
+             label='Quadratic Fit')
+    
+    # Plot Shaded Standard Deviation Bands
+    plt.fill_between(t_fit, area_modeled - std_dev, area_modeled + std_dev, 
+                     color='red', alpha=0.15, label=f'1$\sigma$ Band ($\pm${std_dev:.3f} $\mu$m$^2$)')
+    plt.fill_between(t_fit, area_modeled - 2*std_dev, area_modeled + 2*std_dev, 
+                     color='red', alpha=0.05, label=f'2$\sigma$ Band ($\pm${2*std_dev:.3f} $\mu$m$^2$)')
+    
+    print(f"Fit Equation: Area = {coefficients[0]:.4f}*t² + {coefficients[1]:.4f}*t + {coefficients[2]:.4f}")
+    print(f"Standard Deviation of Residuals (Noise Floor) = {std_dev:.4f} μm²")
+
+# ============================================================
+# PLOT STYLING
+# ============================================================
+plt.ylim(0, 6)
+plt.xlim(0, 20)  
+plt.grid(True, linestyle='--', alpha=0.5)
+
+plt.xlabel("Time [s]")
+plt.ylabel(r"Area [$\mu$m$^2$]")
+plt.legend(loc='upper left')
+
+plt.show()
+
+
+
+
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8, 5))
+
+# 1. UPDATED: Changed markersize to 7 to make the data points bigger and clearer
+plt.plot(times, area_growth, 'o', color='black', markersize=7, alpha=0.7, label='Data')
+
+# ============================================================
+# QUADRATIC FITTING & HIGH-SAMPLING SMOOTH BANDS
+# ============================================================
+fit_mask = (times >= 0) & (times <= 20)
+t_fit = times[fit_mask]
+a_fit = area_growth[fit_mask]
+
+if len(t_fit) > 2:
+    coefficients = np.polyfit(t_fit, a_fit, 2)
+    
+    area_modeled_sparse = np.polyval(coefficients, t_fit)
+    residuals = a_fit - area_modeled_sparse
+    std_dev = np.std(residuals)
+    
+    t_smooth = np.linspace(0, 20, 500)
+    area_modeled_smooth = np.polyval(coefficients, t_smooth)
+    
+    plt.plot(t_smooth, area_modeled_smooth, color='red', linewidth=2, 
+             label='Quadratic Fit')
+    
+    # Clip the smooth lower boundaries slightly below the axis limits to prevent gaps
+    lower_1sig = np.clip(area_modeled_smooth - std_dev, 1e-3, None)
+    upper_1sig = area_modeled_smooth + std_dev
+    
+    lower_2sig = np.clip(area_modeled_smooth - 2*std_dev, 1e-3, None)
+    upper_2sig = area_modeled_smooth + 2*std_dev
+    
+    plt.fill_between(t_smooth, lower_1sig, upper_1sig, 
+                     color='red', alpha=0.15, label=f'1$\sigma$ Band ($\pm${std_dev:.3f} $\mu$m$^2$)')
+    plt.fill_between(t_smooth, lower_2sig, upper_2sig, 
+                     color='red', alpha=0.05, label=f'2$\sigma$ Band ($\pm${2*std_dev:.3f} $\mu$m$^2$)')
+    
+    print(f"Fit Equation: Area = {coefficients[0]:.4f}*t² + {coefficients[1]:.4f}*t + {coefficients[2]:.4f}")
+
+# ============================================================
+# PLOT STYLING
+# ============================================================
+plt.yscale('log')          
+
+# UPDATED: Hard limit set exactly to 10^-2 (0.01) up to 10
+plt.ylim(1e-2, 10)          
+plt.xlim(0, 20)  
+# Add the diffraction limit lines
+plt.axhline(y=2.32, color='blue', linestyle='--', linewidth=1.5, label='Rayleigh Limit ($2.31\,\mu m^2$)')
+plt.axhline(y=1.55, color='purple', linestyle=':', linewidth=1.5, label='Abbe Limit ($1.55\,\mu m^2$)')
+plt.grid(True, which='both', linestyle='--', alpha=0.5)
+
+plt.xlabel("Time [s]")
+plt.ylabel(r"Area [$\mu$m$^2$]")
+plt.legend(loc='lower right')
+plt.savefig("log_area.pdf", bbox_inches='tight')
+
+plt.show()
+
+
+
+
+
+
+
+# %%
+import numpy as np
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(8, 5))
+
+# Filter data to your growth window (0 to 20s)
+fit_mask = (times >= 0) & (times <= 20)
+t_fit = times[fit_mask]
+a_fit = area_growth[fit_mask]
+
+# ============================================================
+# LINEAR TRANSFORMATION (SQUARE ROOT)
+# ============================================================
+# Take the square root of the area data to linearize it
+linear_data = np.sqrt(a_fit)
+
+# Perform a linear fit: y = m*t + c
+# m = linear growth rate (um/s), c = intercept
+slope, intercept = np.polyfit(t_fit, linear_data, 1)
+
+# Evaluate the model line across a smooth timeline
+t_smooth = np.linspace(0, 20, 500)
+linear_modeled_smooth = slope * t_smooth + intercept
+
+# ============================================================
+# CALCULATION OF UNCERTAINTY (STANDARD ERROR OF SLOPE)
+# ============================================================
+# Calculate residuals in the linearized domain
+linear_modeled_sparse = slope * t_fit + intercept
+residuals_linear = linear_data - linear_modeled_sparse
+std_dev_linear = np.std(residuals_linear)
+
+# Standard error of the slope (growth rate uncertainty)
+n = len(t_fit)
+x_mean = np.mean(t_fit)
+slope_uncertainty = std_dev_linear / np.sqrt(np.sum((t_fit - x_mean)**2))
+
+# Print the physical metrics for your conclusion
+print(f"Linear Growth Rate (m) = {slope:.4f} ± {slope_uncertainty:.4f} μm/s")
+print(f"Linear Residual Noise Floor = {std_dev_linear:.4f} μm")
+
+# ============================================================
+# PLOTTING
+# ============================================================
+# Plot the square-root transformed data points
+plt.plot(times, np.sqrt(area_growth), 'o', color='black', markersize=7, alpha=0.7, label='$\sqrt{\text{Area}}$ Data')
+
+# Plot the linear growth rate model
+plt.plot(t_smooth, linear_modeled_smooth, color='red', linewidth=2, 
+         label=f'Linear Fit (Rate: {slope:.3f} $\mu$m/s)')
+
+# Shaded uncertainty bands in the linear domain
+plt.fill_between(t_smooth, linear_modeled_smooth - std_dev_linear, linear_modeled_smooth + std_dev_linear, 
+                 color='red', alpha=0.15, label=f'1$\sigma$ Noise Band ($\pm${std_dev_linear:.3f} $\mu$m)')
+plt.fill_between(t_smooth, linear_modeled_smooth - 2*std_dev_linear, linear_modeled_smooth + 2*std_dev_linear, 
+                 color='red', alpha=0.05, label=f'2$\sigma$ Noise Band ($\pm${2*std_dev_linear:.3f} $\mu$m)')
+
+# Transformed Diffraction Limits (Square root of original area limits)
+# If original limits were Area = 2.83 and 1.90:
+plt.axhline(y=np.sqrt(2.83), color='blue', linestyle='--', linewidth=1.5, label='Rayleigh Limit ($\sqrt{2.83}$ $\mu$m)')
+plt.axhline(y=np.sqrt(1.90), color='purple', linestyle=':', linewidth=1.5, label='Abbe Limit ($\sqrt{1.90}$ $\mu$m)')
+
+plt.xlim(0, 20)
+plt.grid(True, linestyle='--', alpha=0.5)
+plt.xlabel("Time [s]")
+plt.ylabel(r"Effective Radius $\sqrt{\text{Area}}$ [$\mu$m]")
+plt.legend(loc='lower right')
+plt.savefig("linear_growth_rate.pdf", bbox_inches='tight')
+
+plt.show()
+
+
+
+
+
+
